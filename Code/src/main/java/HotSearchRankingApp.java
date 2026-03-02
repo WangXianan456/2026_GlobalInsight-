@@ -55,7 +55,7 @@ public class HotSearchRankingApp {
 
 
         KafkaSource<String> source = KafkaSource.<String>builder()
-                // 修改这里：使用 docker-compose 中定义的内部监听地址 kafka:29092
+                // 使用 docker-compose 中定义的内部监听地址 kafka:29092
                 .setBootstrapServers("kafka:29092")
                 .setTopics("global_behavior_log")
                 .setGroupId("hot_search_group")
