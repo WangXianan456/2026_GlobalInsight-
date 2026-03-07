@@ -16,14 +16,14 @@ public class MockDataGenerator {
     public static class GlobalBehavior {
         public String userId;
         public String eventId;
-        public String countryCode;  // 加入 "CN" (中国)
+        public String countryCode;
         public String siteId;
         public String behavior;
         public String itemId;
         public String searchTerm;
-        public double price;        // 原始价格
-        public String currency;     // 原始币种 (USD, CNY, etc.)
-        public double priceCNY;     // 换算后的 CNY (展示你对结算业务的理解)
+        public double price;
+        public String currency;
+        public double priceCNY;
         public long ts;
 
         @Override
@@ -34,6 +34,14 @@ public class MockDataGenerator {
 
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String TOPIC = "global_behavior_log";
+
+    // 预定义搜索词库
+    private static final String[] SEARCH_KEYWORDS = {
+            "iPhone 15 Case", "Bluetooth Earphones", "Yoga Mat", "Running Shoes", "T-Shirt",
+            "Screen Protector", "USB-C Cable", "Water Bottle", "Socks", "Backpack",
+            "Gaming Mouse", "Mechanical Keyboard", "Smart Watch", "Desk Lamp", "Towel",
+            "Shampoo", "Face Mask", "Lipstick", "Coffee Maker", "Blender"
+    };
 
     public static void main(String[] args) {
         KafkaProducer<String, String> producer = createKafkaProducer();
@@ -47,7 +55,14 @@ public class MockDataGenerator {
                 while (!Thread.currentThread().isInterrupted()) {
                     GlobalBehavior log = generateData(r);
                     producer.send(new ProducerRecord<>(TOPIC, log.userId, log.toString()));
+
+                    // 慢速模式：每条数据休眠 10~60 毫秒
                     try { TimeUnit.MILLISECONDS.sleep(r.nextInt(50) + 10); } catch (Exception e) { break; }
+                    // --- 高速模式 ---
+                    // try { TimeUnit.MILLISECONDS.sleep(r.nextInt(4) + 1); } catch (Exception e) { break; }
+                    // --- 极限模式 ---
+                    // try { TimeUnit.MILLISECONDS.sleep(0); } catch (Exception e) { break; }
+
                 }
             });
         }
@@ -55,35 +70,79 @@ public class MockDataGenerator {
 
     public static GlobalBehavior generateData(Random r) {
         GlobalBehavior log = new GlobalBehavior();
-        // 1. 国家和货币列表加入中国 (CN)
-        String[] countries = {"US", "UK", "JP", "CN"};
-        String[] currencies = {"USD", "GBP", "JPY", "CNY"};
-        double[] exchangeRates = {7.2, 9.1, 0.048, 1.0}; // 模拟实时汇率
 
-        int idx = r.nextInt(countries.length);
-        log.countryCode = countries[idx];
-        log.currency = currencies[idx];
-        log.siteId = "TEMU_" + log.countryCode;
-        log.userId = "U" + (1000 + r.nextInt(5000));
+        // 1. 优化国家分布（由均匀分布改为加权分布）
+        // 扩充更多国家和币种，体现全球化业务
+        String countryCode;
+        String currency;
+        double rate; // 对 CNY 的汇率
+
+        int countryDice = r.nextInt(100);
+
+        if (countryDice < 30) {
+            // 北美市场 (30%)
+            countryCode = "US"; currency = "USD"; rate = 7.2;
+        } else if (countryDice < 45) {
+            // 欧洲市场-德国 (15%)
+            countryCode = "DE"; currency = "EUR"; rate = 7.8;
+        } else if (countryDice < 55) {
+            // 英国市场 (10%)
+            countryCode = "UK"; currency = "GBP"; rate = 9.2;
+        } else if (countryDice < 65) {
+            // 日本市场 (10%)
+            countryCode = "JP"; currency = "JPY"; rate = 0.048;
+        } else if (countryDice < 75) {
+            // 澳洲市场 (10%)
+            countryCode = "AU"; currency = "AUD"; rate = 4.7;
+        } else if (countryDice < 85) {
+            // 加拿大市场 (10%)
+            countryCode = "CA"; currency = "CAD"; rate = 5.3;
+        } else if (countryDice < 95) {
+            // 中国本土 (10%)
+            countryCode = "CN"; currency = "CNY"; rate = 1.0;
+        } else {
+            // 韩国市场 (5%)
+            countryCode = "KR"; currency = "KRW"; rate = 0.0054;
+        }
+
+        log.countryCode = countryCode;
+        log.currency = currency;
+        log.siteId = "TEMU_" + countryCode;
+        log.userId = "U" + (1000 + r.nextInt(10000));
         log.eventId = UUID.randomUUID().toString();
 
-        // 2. 模拟业务逻辑
-        int dice = r.nextInt(100);
-        if (dice < 30) {
+        // 2. 优化行为漏斗（Search 60% -> Click 35% -> Buy 5%）
+        int behaviorDice = r.nextInt(100);
+        if (behaviorDice < 60) {
+
             log.behavior = "search";
-            String[] kws = {"手机壳", "筋膜枪", "无线耳机", "瑜伽垫"};
-            log.searchTerm = kws[r.nextInt(kws.length)];
+            log.searchTerm = SEARCH_KEYWORDS[r.nextInt(SEARCH_KEYWORDS.length)];
             log.itemId = "";
         } else {
-            log.behavior = (dice < 85) ? "click" : "buy";
-            log.itemId = "ITEM-" + (2000 + r.nextInt(1000));
-            if (log.behavior.equals("buy")) {
-                log.price = 10.0 + r.nextDouble() * 500;
-                // 3. 计算本位币 CNY 价格 (核心面试亮点)
-                log.priceCNY = log.price * exchangeRates[idx];
+
+            log.behavior = (behaviorDice < 95) ? "click" : "buy";
+
+            int itemNum = r.nextInt(5000);
+            log.itemId = "ITEM-" + (10000 + itemNum);
+
+            if ("buy".equals(log.behavior)) {
+
+                // 3. 价格一致性优化：价格由 ItemID 决定，而不是完全随机
+
+                double basePrice = 10.0 + (itemNum % 100) * 5.0; // 假定价格跟ID有关
+                double fluctuation = r.nextDouble() * 4.0 - 2.0;
+                log.price = Math.max(0.01, basePrice + fluctuation);
+
+                log.priceCNY = log.price * rate;
             }
         }
-        log.ts = System.currentTimeMillis();
+
+        // 4. 模拟乱序数据
+        // 90% 的数据是实时的，10% 的数据会有 0~5秒 的延迟
+
+        long delay = (r.nextInt(10) < 1) ? r.nextInt(5000) : 0;
+        log.ts = System.currentTimeMillis() - delay;
+
         return log;
     }
 
