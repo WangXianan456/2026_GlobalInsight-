@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.DoubleAdder;
 public class DataMonitorApp {
 
     private static final String TOPIC = "global_behavior_log";
-    private static final String BOOTSTRAP_SERVERS = "localhost:9092";
+    private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String GROUP_ID = "monitor_dashboard_group_" + System.currentTimeMillis(); // 随机组名，保证每次启动都能以此看到所有数据(如果设置earliest)或者最新数据
 
     // 统计指标容器
@@ -45,8 +45,11 @@ public class DataMonitorApp {
     }
 
     private static void startConsumer() {
+        String kafkaServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (kafkaServers == null) kafkaServers = DEFAULT_BOOTSTRAP_SERVERS;
+
         Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
@@ -138,4 +141,3 @@ public class DataMonitorApp {
         System.out.print(sb.toString());
     }
 }
-

@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flink-config
+  namespace: global-insight
+  labels:
+    app: flink
+data:
+  flink-conf.yaml: |+
+    jobmanager.rpc.address: flink-jobmanager
+    taskmanager.numberOfTaskSlots: 2
+    blob.server.port: 6124
+    jobmanager.rpc.port: 6123
+    taskmanager.rpc.port: 6122
+    query.server.port: 6125
+    rest.port: 8081
+    jobmanager.memory.process.size: 1024m
+    taskmanager.memory.process.size: 1536m
+    parallelism.default: 2
+
+  log4j.properties: |+
+    log4j.rootLogger=INFO, file
+    log4j.logger.akka=INFO
+    log4j.logger.org.apache.kafka=INFO
+    log4j.logger.org.apache.hadoop=INFO
+    log4j.logger.org.apache.zookeeper=INFO
+    log4j.appender.file=org.apache.log4j.FileAppender
+    log4j.appender.file.file=${log.file}
+    log4j.appender.file.layout=org.apache.log4j.PatternLayout
+    log4j.appender.file.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p %-60c %x - %m%n
+    log4j.logger.org.apache.flink.shaded.akka.org.jboss.netty.channel.DefaultChannelPipeline=ERROR, file
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: global-insight
+spec:
+  type: ClusterIP
+  ports:
+  - name: rpc
+    port: 6123
+  - name: blob
+    port: 6124
+  - name: query
+    port: 6125
+  - name: ui
+    port: 8081
+  - name: metrics
+    port: 9249
+  selector:
+    app: flink
+    component: jobmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-taskmanager
+  namespace: global-insight
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9249
+  selector:
+    app: flink
+    component: taskmanager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: global-insight
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+    spec:
+      initContainers:
+      - name: enable-plugins
+        image: flink:1.17.1-java8
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            mkdir -p /opt/flink/plugins/metrics-prometheus;
+            cp /opt/flink/opt/flink-metrics-prometheus-*.jar /opt/flink/plugins/metrics-prometheus/;
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /opt/flink/plugins
+      containers:
+      - name: jobmanager
+        image: flink:1.17.1-java8
+        args: ["jobmanager"]
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: ES_HOST
+          value: "elasticsearch"
+        ports:
+        - containerPort: 6123
+          name: rpc
+        - containerPort: 6124
+          name: blob
+        - containerPort: 6125
+          name: query
+        - containerPort: 8081
+          name: ui
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /opt/flink/plugins
+        - name: flink-config-volume
+          mountPath: /opt/flink/conf
+        securityContext:
+          runAsUser: 9999  # flink image user
+        resources:
+          requests:
+            memory: "768Mi"
+            cpu: "200m"
+          limits:
+            memory: "2048Mi"
+            cpu: "1000m"
+      volumes:
+      - name: flink-config-volume
+        configMap:
+          name: flink-config
+          items:
+            - key: flink-conf.yaml
+              path: flink-conf.yaml
+            - key: log4j.properties
+              path: log4j.properties
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: global-insight
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+    spec:
+      initContainers:
+      - name: enable-plugins
+        image: flink:1.17.1-java8
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            mkdir -p /opt/flink/plugins/metrics-prometheus;
+            cp /opt/flink/opt/flink-metrics-prometheus-*.jar /opt/flink/plugins/metrics-prometheus/;
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /opt/flink/plugins
+      containers:
+      - name: taskmanager
+        image: flink:1.17.1-java8
+        args: ["taskmanager"]
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: ES_HOST
+          value: "elasticsearch"
+        ports:
+        - containerPort: 6122
+          name: rpc
+        - containerPort: 6125
+          name: query
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /opt/flink/plugins
+        - name: flink-config-volume
+          mountPath: /opt/flink/conf
+        securityContext:
+          runAsUser: 9999
+        resources:
+          requests:
+            memory: "1536Mi"
+            cpu: "500m"
+          limits:
+            memory: "2048Mi"
+            cpu: "1000m"
+      volumes:
+      - name: flink-config-volume
+        configMap:
+          name: flink-config
+          items:
+          - key: flink-conf.yaml
+            path: flink-conf.yaml
+          - key: log4j.properties
+            path: log4j.properties
+

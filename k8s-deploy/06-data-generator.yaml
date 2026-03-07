@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-data-generator
+  namespace: global-insight
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-data-generator
+  template:
+    metadata:
+      labels:
+        app: mock-data-generator
+    spec:
+      containers:
+      - name: generator
+
+        image: global-insight.tencentcloudcr.com/app/app:latest
+        imagePullPolicy: Always
+        command: ["java", "-cp", "/app/GlobalInsight.jar", "MockDataGenerator"]
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+

@@ -14,12 +14,15 @@ import java.time.Duration; // Import Duration
 
 public class RealtimeGMVApp {
     public static void main(String[] args) throws Exception {
-  
+
+        String kafkaServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (kafkaServers == null) kafkaServers = "localhost:9092";
+
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(1); // 初期开发先设为 1，方便观察结果
 
         KafkaSource<String> source = KafkaSource.<String>builder()
-                .setBootstrapServers("localhost:9092")
+                .setBootstrapServers(kafkaServers)
                 .setTopics("global_behavior_log")
                 .setGroupId("gmv_group")
                 .setStartingOffsets(OffsetsInitializer.latest())

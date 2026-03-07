@@ -11,6 +11,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
+
     container_name: kafka
     depends_on:
       - zookeeper
@@ -41,7 +42,7 @@ services:
     container_name: flink-taskmanager
     depends_on:
       - flink-jobmanager
-    # 删掉所有 bash 命令，直接干干净净地启动！
+
     command: taskmanager 
     ports:
       - "9249:9249"
@@ -76,14 +77,14 @@ services:
       depends_on:
         - prometheus
       environment:
-        - GF_SECURITY_ADMIN_PASSWORD=admin # 设置默认密码
+        - GF_SECURITY_ADMIN_PASSWORD=admin
       restart: always
   elasticsearch:
     image: elasticsearch:7.17.10
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
-      # 极其重要：限制 JVM 内存，否则你的电脑会卡死，容器会频繁重启！
+
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m" 
     ports:
       - "9200:9200"

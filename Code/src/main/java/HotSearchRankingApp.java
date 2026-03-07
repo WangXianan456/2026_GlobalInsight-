@@ -49,12 +49,18 @@ public class HotSearchRankingApp {
                 new org.apache.flink.runtime.state.storage.JobManagerCheckpointStorage()
         );
 
+        // 获取外部配置 (支持 K8s 环境变量注入)
+        String kafkaServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (kafkaServers == null) kafkaServers = "localhost:9092"; // 默认本地
 
+        String redisHost = System.getenv("REDIS_HOST");
+        if (redisHost == null) redisHost = "redis";
+
+        String esHost = System.getenv("ES_HOST");
+        if (esHost == null) esHost = "elasticsearch";
 
         KafkaSource<String> source = KafkaSource.<String>builder()
-                // 本地调试 localhost:9092
-                // 线上kafka:29092
-                .setBootstrapServers("localhost:9092")
+                .setBootstrapServers(kafkaServers)
                 .setTopics("global_behavior_log")
                 .setGroupId("hot_search_group")
                 .setStartingOffsets(OffsetsInitializer.earliest())
@@ -92,17 +98,19 @@ public class HotSearchRankingApp {
         resultStream.print();
 
         FlinkJedisPoolConfig conf = new FlinkJedisPoolConfig.Builder()
-                .setHost("redis")
+                .setHost(redisHost)
                 .setPort(6379)
                 .build();
 
         resultStream.addSink(new RedisSink<>(conf, new HotSearchRedisMapper()));
 
+        // 如果需要 final 变量给 lambda 使用
+        final String finalEsHost = esHost;
 
         org.apache.flink.connector.elasticsearch.sink.Elasticsearch7SinkBuilder<String> esSinkBuilder =
                 new org.apache.flink.connector.elasticsearch.sink.Elasticsearch7SinkBuilder<String>()
 
-                        .setHosts(new org.apache.http.HttpHost("elasticsearch", 9200, "http"))
+                        .setHosts(new org.apache.http.HttpHost(finalEsHost, 9200, "http"))
                         // 每积攒 50 条数据，或者达到一定体积就批量写入，提高吞吐量
                         .setBulkFlushMaxActions(50)
                         .setEmitter(

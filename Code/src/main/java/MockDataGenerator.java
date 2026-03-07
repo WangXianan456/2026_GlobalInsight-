@@ -32,8 +32,9 @@ public class MockDataGenerator {
         }
     }
 
-    private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String TOPIC = "global_behavior_log";
+    // 默认值，如果环境变量未设置
+    private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
 
     // 预定义搜索词库
     private static final String[] SEARCH_KEYWORDS = {
@@ -43,8 +44,17 @@ public class MockDataGenerator {
             "Shampoo", "Face Mask", "Lipstick", "Coffee Maker", "Blender"
     };
 
-    public static void main(String[] args) {
-        KafkaProducer<String, String> producer = createKafkaProducer();
+    public static void main(String[] args) throws Exception {
+
+        String kafkaServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (kafkaServers == null) kafkaServers = DEFAULT_BOOTSTRAP_SERVERS;
+
+        Properties props = new Properties();
+        props.put("bootstrap.servers", kafkaServers);
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+
+        KafkaProducer<String, String> producer = new KafkaProducer<>(props);
         ExecutorService executor = Executors.newFixedThreadPool(5); // 模拟高并发
 
         System.out.println(">>> GlobalInsight 模拟器：已切换为 CNY 本位币模式...");
@@ -148,8 +158,11 @@ public class MockDataGenerator {
 
 
     public static KafkaProducer<String, String> createKafkaProducer() {
+        String kafkaServers = System.getenv("KAFKA_BOOTSTRAP_SERVERS");
+        if (kafkaServers == null) kafkaServers = DEFAULT_BOOTSTRAP_SERVERS;
+
         Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         return new KafkaProducer<>(props);
