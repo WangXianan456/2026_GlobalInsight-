@@ -16,11 +16,14 @@ public class MockDataGenerator {
     public static class GlobalBehavior {
         public String userId;
         public String eventId;
+        public String sessionId;
         public String countryCode;
         public String siteId;
         public String behavior;
         public String itemId;
         public String searchTerm;
+        public int age;
+        public String level;
         public double price;
         public String currency;
         public double priceCNY;
@@ -33,10 +36,23 @@ public class MockDataGenerator {
     }
 
     private static final String TOPIC = "global_behavior_log";
-    // 默认值，如果环境变量未设置
-    private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
+    private static final String DEFAULT_BOOTSTRAP_SERVERS = "127.0.0.1:9092";
 
-    // 预定义搜索词库
+    private static final java.util.Map<String, UserProfile> USER_PROFILES = new java.util.HashMap<>();
+
+    private static final java.util.Map<String, UserSession> USER_SESSIONS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static class UserProfile {
+        int age;
+        String level;
+    }
+
+    private static class UserSession {
+        String sessionId;
+        long lastTs;
+        int step; // 0: search, 1: click, 2: cart, 3: buy
+    }
+
     private static final String[] SEARCH_KEYWORDS = {
             "iPhone 15 Case", "Bluetooth Earphones", "Yoga Mat", "Running Shoes", "T-Shirt",
             "Screen Protector", "USB-C Cable", "Water Bottle", "Socks", "Backpack",
@@ -55,19 +71,32 @@ public class MockDataGenerator {
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 
         KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+
+        Random r = new Random();
+        String[] levels = {"Bronze", "Silver", "Gold", "Diamond"};
+        for (int i = 0; i < 1000; i++) {
+            String uid = "U" + (1000 + i);
+            UserProfile p = new UserProfile();
+            p.age = 18 + r.nextInt(42);
+            p.level = levels[r.nextInt(levels.length)];
+            USER_PROFILES.put(uid, p);
+        }
+
         ExecutorService executor = Executors.newFixedThreadPool(5); // 模拟高并发
 
         System.out.println(">>> GlobalInsight 模拟器：已切换为 CNY 本位币模式...");
 
         for (int i = 0; i < 5; i++) {
             executor.execute(() -> {
-                Random r = new Random();
+                Random r1 = new Random();
                 while (!Thread.currentThread().isInterrupted()) {
-                    GlobalBehavior log = generateData(r);
+                    GlobalBehavior log = generateData(r1);
                     producer.send(new ProducerRecord<>(TOPIC, log.userId, log.toString()));
 
+                    System.out.println("成功发送 -> 用户: " + log.userId + " | 行为: " + log.behavior + " | 会话: " + log.sessionId);
+
                     // 慢速模式：每条数据休眠 10~60 毫秒
-                    try { TimeUnit.MILLISECONDS.sleep(r.nextInt(50) + 10); } catch (Exception e) { break; }
+                    try { TimeUnit.MILLISECONDS.sleep(r1.nextInt(50) + 10); } catch (Exception e) { break; }
                     // --- 高速模式 ---
                     // try { TimeUnit.MILLISECONDS.sleep(r.nextInt(4) + 1); } catch (Exception e) { break; }
                     // --- 极限模式 ---
@@ -81,77 +110,93 @@ public class MockDataGenerator {
     public static GlobalBehavior generateData(Random r) {
         GlobalBehavior log = new GlobalBehavior();
 
-        // 1. 优化国家分布（由均匀分布改为加权分布）
-        // 扩充更多国家和币种，体现全球化业务
         String countryCode;
         String currency;
-        double rate; // 对 CNY 的汇率
+        double rate;
 
         int countryDice = r.nextInt(100);
 
         if (countryDice < 30) {
-            // 北美市场 (30%)
+
             countryCode = "US"; currency = "USD"; rate = 7.2;
         } else if (countryDice < 45) {
-            // 欧洲市场-德国 (15%)
+
             countryCode = "DE"; currency = "EUR"; rate = 7.8;
         } else if (countryDice < 55) {
-            // 英国市场 (10%)
+
             countryCode = "UK"; currency = "GBP"; rate = 9.2;
         } else if (countryDice < 65) {
-            // 日本市场 (10%)
+
             countryCode = "JP"; currency = "JPY"; rate = 0.048;
         } else if (countryDice < 75) {
-            // 澳洲市场 (10%)
+
             countryCode = "AU"; currency = "AUD"; rate = 4.7;
         } else if (countryDice < 85) {
-            // 加拿大市场 (10%)
+
             countryCode = "CA"; currency = "CAD"; rate = 5.3;
         } else if (countryDice < 95) {
-            // 中国本土 (10%)
+
             countryCode = "CN"; currency = "CNY"; rate = 1.0;
         } else {
-            // 韩国市场 (5%)
+
             countryCode = "KR"; currency = "KRW"; rate = 0.0054;
         }
 
         log.countryCode = countryCode;
         log.currency = currency;
         log.siteId = "TEMU_" + countryCode;
-        log.userId = "U" + (1000 + r.nextInt(10000));
+
+        String userId = "U" + (1000 + r.nextInt(1000));
+        log.userId = userId;
         log.eventId = UUID.randomUUID().toString();
 
-        // 2. 优化行为漏斗（Search 60% -> Click 35% -> Buy 5%）
-        int behaviorDice = r.nextInt(100);
-        if (behaviorDice < 60) {
+        UserSession session = USER_SESSIONS.get(userId);
+        long now = System.currentTimeMillis();
+        if (session == null || (now - session.lastTs) > 300000) { // 5分钟超时
+            session = new UserSession();
+            session.sessionId = UUID.randomUUID().toString();
+            session.step = 0;
+            USER_SESSIONS.put(userId, session);
+        }
+        session.lastTs = now;
+        log.sessionId = session.sessionId;
 
+        UserProfile profile = USER_PROFILES.get(userId);
+        if (profile != null) {
+            log.age = profile.age;
+            log.level = profile.level;
+        }
+
+        // 会话漏斗逻辑模拟 (Search -> Click -> Buy)
+        if (session.step == 0) {
             log.behavior = "search";
             log.searchTerm = SEARCH_KEYWORDS[r.nextInt(SEARCH_KEYWORDS.length)];
             log.itemId = "";
-        } else {
-
-            log.behavior = (behaviorDice < 95) ? "click" : "buy";
-
+            if (r.nextBoolean()) session.step = 1; // 50% 概率进入下一步
+        } else if (session.step == 1) {
+            log.behavior = "click";
             int itemNum = r.nextInt(5000);
             log.itemId = "ITEM-" + (10000 + itemNum);
+            log.searchTerm = "";
+            if (r.nextInt(10) < 2) session.step = 2; // 20% 概率下单
+            else if (r.nextBoolean()) session.step = 0; // 50% 概率重新搜索
+        } else {
+            log.behavior = "buy";
+            int itemNum = r.nextInt(5000);
+            log.itemId = "ITEM-" + (10000 + itemNum);
+            log.searchTerm = "";
 
-            if ("buy".equals(log.behavior)) {
+            double basePrice = 10.0 + (itemNum % 100) * 5.0;
+            double fluctuation = r.nextDouble() * 4.0 - 2.0;
+            log.price = Math.max(0.01, basePrice + fluctuation);
+            log.priceCNY = log.price * rate;
 
-                // 3. 价格一致性优化：价格由 ItemID 决定，而不是完全随机
-
-                double basePrice = 10.0 + (itemNum % 100) * 5.0; // 假定价格跟ID有关
-                double fluctuation = r.nextDouble() * 4.0 - 2.0;
-                log.price = Math.max(0.01, basePrice + fluctuation);
-
-                log.priceCNY = log.price * rate;
-            }
+            session.step = 0; // 购买完重置
+            session.sessionId = UUID.randomUUID().toString(); // 重置 Session
         }
 
-        // 4. 模拟乱序数据
-        // 90% 的数据是实时的，10% 的数据会有 0~5秒 的延迟
-
         long delay = (r.nextInt(10) < 1) ? r.nextInt(5000) : 0;
-        log.ts = System.currentTimeMillis() - delay;
+        log.ts = now - delay;
 
         return log;
     }

@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hive-config
+data:
+  HIVE_SITE_CONF_javax_jdo_option_ConnectionURL: "jdbc:postgresql://hive-metastore-db:5432/metastore"
+  HIVE_SITE_CONF_javax_jdo_option_ConnectionDriverName: "org.postgresql.Driver"
+  HIVE_SITE_CONF_javax_jdo_option_ConnectionUserName: "hive"
+  HIVE_SITE_CONF_javax_jdo_option_ConnectionPassword: "hive"
+  # 指向 HDFS NameNode 服务
+  CORE_CONF_fs_defaultFS: "hdfs://namenode:9000"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hive-metastore-db
+spec:
+  ports:
+  - port: 5432
+    name: postgres
+  selector:
+    app: hive-metastore-db
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-metastore-db
+spec:
+  selector:
+    matchLabels:
+      app: hive-metastore-db
+  template:
+    metadata:
+      labels:
+        app: hive-metastore-db
+    spec:
+      containers:
+      - name: postgres
+        image: bde2020/hive-metastore-postgresql:2.3.0
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: hive-db-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: hive-db-data
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hive-metastore
+spec:
+  ports:
+  - port: 9083
+    name: thrift
+  selector:
+    app: hive-metastore
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hive-metastore
+spec:
+  selector:
+    matchLabels:
+      app: hive-metastore
+  template:
+    metadata:
+      labels:
+        app: hive-metastore
+    spec:
+      containers:
+      - name: hive-metastore
+        image: bde2020/hive:2.3.2-postgresql-metastore
+        envFrom:
+        - configMapRef:
+            name: hive-config
+        command: ["/opt/hive/bin/hive", "--service", "metastore"]
+        ports:
+        - containerPort: 9083
+        readinessProbe:
+          tcpSocket:
+            port: 9083
+          initialDelaySeconds: 20
+          periodSeconds: 10
+
+---
+# 简单的单机 HDFS 用于演示 (不推荐用于生产)
+apiVersion: v1
+kind: Service
+metadata:
+  name: namenode
+spec:
+  ports:
+  - port: 9870
+    name: http
+  - port: 9000
+    name: ipc
+  selector:
+    app: namenode
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namenode
+spec:
+  selector:
+    matchLabels:
+      app: namenode
+  template:
+    metadata:
+      labels:
+        app: namenode
+    spec:
+      containers:
+      - name: namenode
+        image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+        env:
+        - name: CLUSTER_NAME
+          value: "test"
+        ports:
+        - containerPort: 9870
+        - containerPort: 9000
+        volumeMounts:
+        - name: namenode-data
+          mountPath: /hadoop/dfs/name
+      volumes:
+      - name: namenode-data
+        emptyDir: {}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datanode
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datanode
+  template:
+    metadata:
+      labels:
+        app: datanode
+    spec:
+      containers:
+      - name: datanode
+        image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+        env:
+        - name: SERVICE_PRECONDITION
+          value: "namenode:9870"
+        ports:
+        - containerPort: 9864
+        volumeMounts:
+        - name: datanode-data
+          mountPath: /hadoop/dfs/data
+      volumes:
+      - name: datanode-data
+        emptyDir: {}
+

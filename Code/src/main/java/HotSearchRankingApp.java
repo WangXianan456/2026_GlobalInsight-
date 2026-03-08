@@ -89,7 +89,7 @@ public class HotSearchRankingApp {
                 .filter(data -> "search".equals(data.getString("behavior")))
                 .map(data -> data.getString("searchTerm"))
                 .keyBy(word -> word)
-                // CHANGE: 滑动窗口改为 EventTime 类型
+
                 .window(SlidingEventTimeWindows.of(Time.seconds(30), Time.seconds(10)))
                 .aggregate(new HotWordAgg(), new HotWordWindowResult())
                 .keyBy(res -> res.windowEnd)

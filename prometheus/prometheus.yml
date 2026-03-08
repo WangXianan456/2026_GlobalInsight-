@@ -4,4 +4,4 @@ global:
 scrape_configs:
   - job_name: 'flink-metrics'
     static_configs:
-      - targets: ['flink-taskmanager:9249'] # 必须与 compose 中的服务名一致
+      - targets: ['flink-taskmanager:9249']
