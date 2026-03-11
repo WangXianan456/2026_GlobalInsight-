@@ -10,6 +10,33 @@ dependency-reduced-pom.xml
 *.ipr
 out/
 
+# Eclipse
+.classpath
+.project
+.settings/
+
+# VS Code
+.vscode/
+
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+._*
+
+# Java/JVM Crash Logs
+hs_err_pid*
+replay_pid*
+
+# Flink & Hadoop Local Artifacts
+metastore_db/
+derby.log
+
+# Temporary Files
+*~
+*.swp
+*.swo
+
+# Environment Files
+*.env
+!.env.example
